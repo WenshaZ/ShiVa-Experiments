@@ -18,7 +18,189 @@ library(PCMBaseCpp)
 library(PCMFit)
 library(data.table)
 library(phylolm)
+library(phytools)
 ```
+
+```{r}
+###### plotting code ##########
+# Load libraries
+library(ggtree)
+library(ggplot2)
+library(ggnewscale)
+library(gridExtra)
+library(viridis)
+library(scales)
+
+#--- For ShiVa-style models ---#
+extract_shifts <- function(model, tree) {
+  edge_nodes <- tree$edge[, 2]
+  mean_shifts <- which(model$beta != 0)
+  var_shifts <- which(model$gamma != 0)
+  
+  list(
+    mean = data.frame(
+      edge = mean_shifts,
+      node = edge_nodes[mean_shifts],
+      size = model$beta[mean_shifts]
+    ),
+    var = data.frame(
+      edge = var_shifts,
+      node = edge_nodes[var_shifts],
+      size = model$gamma[var_shifts]
+    ),
+    sigma2 = signif(model$sigma2, 2),
+    alpha = signif(model$alpha, 2),
+    loglik = round(model$loglik, 2),
+    BIC = round(model$BIC, 2)
+  )
+}
+
+plot_model_shifts <- function(tree, trait, model, title) {
+  if (is.null(names(trait)) || length(names(trait)) == 0) {
+    names(trait) <- tree$tip.label
+  }
+  trait_df <- data.frame(label = names(trait), trait = trait)
+  shift_info <- extract_shifts(model, tree)
+  
+  tree_plot <- ggtree(tree)
+  layout_df <- tree_plot$data
+
+  subtitle_text <- bquote(
+    paste(
+      sigma ^2 == .(shift_info$sigma2), ",  ",
+      alpha == .(shift_info$alpha), ",  ",
+      "loglik = " * .(shift_info$loglik), ",  ",
+      "BIC = " * .(shift_info$BIC)
+    )
+  )
+
+  g <- tree_plot %<+% trait_df +
+    geom_tippoint(aes(color = trait), size = 2) +
+    scale_color_gradientn(
+      colours = c("blue", "yellow", "red"),
+      name = "Trait",
+      limits = range(trait),
+      values = rescale(c(min(trait), mean(trait), max(trait)))
+    ) +
+    ggtitle(title, subtitle = subtitle_text) +
+    theme_tree2()
+
+  # Mean shifts
+  if (nrow(shift_info$mean) > 0) {
+    mean_df <- shift_info$mean
+    mean_df$y <- layout_df$y[match(mean_df$node, layout_df$node)]
+    mean_df$x <- sapply(mean_df$edge, function(i) {
+      edge <- tree$edge[i, ]
+      parent_x <- layout_df$x[layout_df$node == edge[1]]
+      child_x <- layout_df$x[layout_df$node == edge[2]]
+      (parent_x + child_x) / 2
+    })
+    g <- g + new_scale_color() +
+      geom_point(data = mean_df, aes(x = x, y = y), shape = 21, fill = "green", color = "black", size = 5) +
+      geom_text(data = mean_df, aes(x = x, y = y, label = edge), size = 2.8, color = "black") +
+      geom_text(data = mean_df, aes(x = x, y = y, label = round(size, 2)), vjust = -2, size = 3.5, color = "darkgreen")
+  }
+
+  # Variance shifts
+  if (nrow(shift_info$var) > 0) {
+    var_df <- shift_info$var
+    var_df$y <- layout_df$y[match(var_df$node, layout_df$node)]
+    var_df$x <- sapply(var_df$edge, function(i) {
+      edge <- tree$edge[i, ]
+      parent_x <- layout_df$x[layout_df$node == edge[1]]
+      child_x <- layout_df$x[layout_df$node == edge[2]]
+      (parent_x + child_x) / 2
+    })
+    g <- g + new_scale_color() +
+      geom_point(data = var_df, aes(x = x, y = y), shape = 22, fill = "pink", color = "black", size = 5) +
+      geom_text(data = var_df, aes(x = x, y = y, label = edge), size = 2.8, color = "black") +
+      geom_text(data = var_df, aes(x = x, y = y, label = round(size, 2)), vjust = 2, size = 3.5, color = "deeppink4")
+  }
+
+  return(g)
+}
+
+
+
+plot_PCMFit_model <- function(tree, trait, bestFit, title = "PCMFit") {
+
+  # Prepare trait data
+  names(trait) <- tree$tip.label
+  trait_df <- data.frame(label = names(trait), trait = trait)
+
+  # Extract model parameters
+  loglik <- round(attr(bestFit$inferredModel, "ll"), 2)
+  BIC <- round(attr(bestFit$inferredModel, "score"), 2)
+
+  OU_model <- bestFit$inferredModel[[2]]
+  BM_model_2 <- bestFit$inferredModel[[3]]
+  BM_model_3 <- bestFit$inferredModel[[4]]
+
+  alpha <- signif(OU_model$H[1, 1, 1], 3)
+  theta <- signif(OU_model$Theta[1, 1], 3)
+  sigma2_ou <- signif(OU_model$Sigma_x[1, 1, 1]^2, 3)
+  sigma2_bm2 <- signif(BM_model_2$Sigma_x[1, 1, 1]^2, 3)
+  sigma2_bm3 <- signif(BM_model_3$Sigma_x[1, 1, 1]^2, 3)
+
+  subtitle_text <- paste0(
+    "OU (Regime 1): α = ", alpha, ", θ = ", theta, ", σ² = ", sigma2_ou, "\n",
+    "BM (Regime 2): σ² = ", sigma2_bm2, "\n",
+    "BM (Regime 3): σ² = ", sigma2_bm3, "\n",
+    "logLik = ", loglik, ", BIC = ", BIC
+  )
+
+  # Create base tree plot
+  ggtree_obj <- ggtree(tree)
+  layout_df <- ggtree_obj$data
+
+  # Create mapping: regime node -> regime name
+  regime_nodes <- as.numeric(bestFit$inferredRegimeNodes)
+  regime_labels <- c("Regime 1", "Regime 2", "Regime 3")
+
+  # Get edge info
+  edge_info <- as.data.frame(tree$edge)
+  colnames(edge_info) <- c("parent", "child")
+
+  # For each regime node, find corresponding edge and get midpoint
+  regime_coords <- do.call(rbind, lapply(seq_along(regime_nodes), function(i) {
+    child <- regime_nodes[i]
+    parent <- edge_info$parent[edge_info$child == child]
+
+    # Get coordinates of parent and child
+    child_coords <- layout_df[layout_df$node == child, c("x", "y")]
+    parent_coords <- layout_df[layout_df$node == parent, c("x", "y")]
+
+    # Midpoint
+    mid_x <- mean(c(child_coords$x, parent_coords$x))
+    mid_y <- mean(c(child_coords$y, parent_coords$y))
+
+    data.frame(x = mid_x, y = mid_y, label = regime_labels[i])
+  }))
+
+  # Final plot
+  g <- ggtree_obj %<+% trait_df +
+    geom_tippoint(aes(color = trait), size = 2) +
+    scale_color_gradientn(
+      colours = c("blue", "yellow", "red"),
+      name = "Trait",
+      limits = range(trait),
+      values = rescale(c(min(trait), mean(trait), max(trait)))
+    ) +
+    geom_label(
+      data = regime_coords,
+      aes(x = x, y = y, label = label),
+      fill = "skyblue", color = "black", size = 4,
+      label.size = NA, fontface = "bold"
+    ) +
+    ggtitle(title, subtitle = subtitle_text) +
+    theme_tree2()
+
+  return(g)
+}
+
+```
+
+
 
 # Flower data
 ```{r}
@@ -26,6 +208,135 @@ library(phylolm)
 data("flowerSize")
 data("flowerTree")
 
+Y = flowerSize$log_transformed_size # Use log-transformed flower diameter
+names(Y) = row.names(flowerSize)
+adj_data = adjust_data(flowerTree,as.matrix(Y)) # Standardize the tree and match the tips
+tree2 = adj_data$tree
+Y2 = adj_data$Y
+class(tree2) = 'phylo'
 
+############ ShiVa ###############
+alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
+ShiVa_model = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
+                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.min",max.num.shifts = 16)$best_model
+print(paste0("ShiVa: shifts in opimal value - ",paste(ShiVa_model$shifts_mean,collapse=",")))
+print(paste0("ShiVa: shifts in variance - ",paste(ShiVa_model$shifts_var,collapse=",")))
+
+########### l1ou #################
+l1ou_pBIC = estimate_shift_configuration(tree2,Y2)
+l1ou_BIC = estimate_shift_configuration(tree2,Y2,criterion = "BIC")
+
+########### phyloEM ##############
+emmodel = PhyloEM(force.ultrametric(tree2),as.vector(Y2),process='OU',K_max = 20)
+sv_em = params_process(emmodel)$shift$edges
+
+########### PCMFit ###############
+generatePCMModelsFunction <- function() {
+# make results reproducible
+set.seed(4, kind = "Mersenne-Twister", normal.kind = "Inversion")
+
+PCMGenerateModelTypes()
+# An example DefineParameterLimits.R file can be found in 
+# vignettes/DefineParameterLimits.R of the PCMFit package source-code. 
+# Note that the path here is relative to the working directory of
+# the worker node R-process. 
+source('method_helpers/DefineParameterLimits.R', local=FALSE)
+}
+
+fitMGPM_A_F_BC2_RR <- PCMFitMixed(
+    X = t(Y2), tree = tree2, metaIFun = PCMInfoCpp,
+    generatePCMModelsFun = generatePCMModelsFunction, 
+    maxNumRoundRobins = 2, maxNumPartitionsInRoundRobins = 10,minCladeSizes = 2L,
+    tableFitsPrev = NULL,
+   # prefixFiles = prefixFiles,
+    doParallel = FALSE)
+bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
+
+```
+
+```{r}
+
+l1ou_pBIC_model = fit_OU_mean_var(tree2, Y2, l1ou_pBIC$alpha, l1ou_pBIC$shift.configuration, c())
+l1ou_BIC_model = fit_OU_mean_var(tree2, Y2, l1ou_BIC$alpha, l1ou_BIC$shift.configuration, c())
+phyloEM_model = fit_OU_mean_var(tree2, Y2, params_process(emmodel)$selection, sv_em, c())
+#--- Create all plots ---#
+p1 <- plot_model_shifts(tree2, Y2, ShiVa_model, "ShiVa")
+p2 <- plot_model_shifts(tree2, Y2, l1ou_pBIC_model, "l1ou+pBIC")
+p3 <- plot_model_shifts(tree2, Y2, l1ou_BIC_model, "l1ou+BIC")
+p4 <- plot_model_shifts(tree2, Y2, phyloEM_model, "PhyloEM")
+p5 <- plot_PCMFit_model(tree2, Y2, bestFit, "PCMFit")
+
+#--- Display all together ---#
+grid.arrange(p1, p2, p3, p4, p5, NULL, ncol = 2)
+
+```
+
+# Sunfish data
+```{r}
+# Flower data is from phytools package
+data("sunfish.data")
+data("sunfish.tree")
+
+Y = sunfish.data$buccal.length # Use log-transformed buccal.length
+names(Y) = row.names(sunfish.data)
+sunfish.tree$tip.label = as.character(sunfish.tree$tip.label)
+adj_data = adjust_data(sunfish.tree,as.matrix(Y)) # Standardize the tree and match the tips
+tree2 = adj_data$tree
+Y2 = adj_data$Y
+class(tree2) = 'phylo'
+
+############ ShiVa ###############
+alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
+set.seed(135)
+ShiVa_model = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
+                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.1se",max.num.shifts = 16)$best_model
+print(paste0("ShiVa: shifts in opimal value - ",paste(ShiVa_model$shifts_mean,collapse=",")))
+print(paste0("ShiVa: shifts in variance - ",paste(ShiVa_model$shifts_var,collapse=",")))
+
+########### l1ou #################
+l1ou_pBIC = estimate_shift_configuration(tree2,Y2)
+l1ou_BIC = estimate_shift_configuration(tree2,Y2,criterion = "BIC")
+
+########### phyloEM ##############
+emmodel = PhyloEM(force.ultrametric(tree2),as.vector(Y2),process='OU',K_max = 20)
+sv_em = params_process(emmodel)$shift$edges
+
+########### PCMFit ###############
+generatePCMModelsFunction <- function() {
+# make results reproducible
+set.seed(4, kind = "Mersenne-Twister", normal.kind = "Inversion")
+
+PCMGenerateModelTypes()
+# An example DefineParameterLimits.R file can be found in 
+# vignettes/DefineParameterLimits.R of the PCMFit package source-code. 
+# Note that the path here is relative to the working directory of
+# the worker node R-process. 
+source('method_helpers/DefineParameterLimits.R', local=FALSE)
+}
+
+fitMGPM_A_F_BC2_RR <- PCMFitMixed(
+    X = t(Y2), tree = tree2, metaIFun = PCMInfoCpp,
+    generatePCMModelsFun = generatePCMModelsFunction, 
+    maxNumRoundRobins = 2, maxNumPartitionsInRoundRobins = 10,minCladeSizes = 2L,
+    tableFitsPrev = NULL,
+   # prefixFiles = prefixFiles,
+    doParallel = FALSE)
+bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
+```
+
+```{r}
+
+l1ou_pBIC_model = fit_OU_mean_var(tree2, Y2, l1ou_pBIC$alpha, l1ou_pBIC$shift.configuration, c())
+l1ou_BIC_model = fit_OU_mean_var(tree2, Y2, l1ou_BIC$alpha, l1ou_BIC$shift.configuration, c())
+phyloEM_model = fit_OU_mean_var(tree2, Y2, params_process(emmodel)$selection, sv_em, c())
+#--- Create all plots ---#
+p1 <- plot_model_shifts(tree2, Y2, ShiVa_model, "ShiVa")
+p2 <- plot_model_shifts(tree2, Y2, l1ou_pBIC_model, "l1ou+pBIC")
+p3 <- plot_model_shifts(tree2, Y2, l1ou_BIC_model, "l1ou+BIC")
+p4 <- plot_model_shifts(tree2, Y2, phyloEM_model, "PhyloEM")
+p5 <- plot_PCMFit_model(tree2, Y2, bestFit, "PCMFit")
+
+#--- Display all together ---#
+grid.arrange(p1, p2, p3, p4, p5, NULL, ncol = 2)
 
 ```
