@@ -1,12 +1,13 @@
 ---
 title: "case-study"
-output: pdf
+output: html_document
 date: "2025-07-15"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Load dependencies and custom plotting utilities
 
 ```{r}
 source('ShiVa.R')
@@ -203,6 +204,7 @@ plot_PCMFit_model <- function(tree, trait, bestFit, title = "PCMFit") {
 
 
 # Flower data
+Load the data from phylolm package. We then apply ShiVa, l1ou+pBIC, l1ou+BIC, phyloEM and PCMFit on the flower data.
 ```{r}
 # Flower data is from phylolm package
 data("flowerSize")
@@ -254,6 +256,7 @@ bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
 
 ```
 
+Generate result comparison plots.
 ```{r}
 
 l1ou_pBIC_model = fit_OU_mean_var(tree2, Y2, l1ou_pBIC$alpha, l1ou_pBIC$shift.configuration, c())
@@ -272,6 +275,8 @@ grid.arrange(p1, p2, p3, p4, p5, NULL, ncol = 2)
 ```
 
 # Sunfish data
+Load the data from phytools package. We then apply ShiVa, l1ou+pBIC, l1ou+BIC, phyloEM and PCMFit on the flower data.
+
 ```{r}
 # Flower data is from phytools package
 data("sunfish.data")
@@ -323,6 +328,7 @@ fitMGPM_A_F_BC2_RR <- PCMFitMixed(
     doParallel = FALSE)
 bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
 ```
+Generate result comparison plots.
 
 ```{r}
 
