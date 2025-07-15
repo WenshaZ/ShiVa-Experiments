@@ -289,7 +289,7 @@ class(tree2) = 'phylo'
 alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
 set.seed(135)
 ShiVa_model = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
-                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.1se",max.num.shifts = 16)$best_model
+                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.min",max.num.shifts = 16)$best_model
 print(paste0("ShiVa: shifts in opimal value - ",paste(ShiVa_model$shifts_mean,collapse=",")))
 print(paste0("ShiVa: shifts in variance - ",paste(ShiVa_model$shifts_var,collapse=",")))
 
