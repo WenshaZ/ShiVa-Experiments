@@ -350,3 +350,20 @@ fitMGPM_A_F_BC2_RR <- PCMFitMixed(
 bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
 
 ```
+Generate result comparison plots.
+```{r}
+
+l1ou_pBIC_model = fit_OU_mean_var(tree2, Y2, l1ou_pBIC$alpha, l1ou_pBIC$shift.configuration, c())
+l1ou_BIC_model = fit_OU_mean_var(tree2, Y2, l1ou_BIC$alpha, l1ou_BIC$shift.configuration, c())
+phyloEM_model = fit_OU_mean_var(tree2, Y2, params_process(emmodel)$selection, sv_em, c())
+#--- Create all plots ---#
+p1 <- plot_model_shifts(tree2, Y2, ShiVa_model, "ShiVa")
+p2 <- plot_model_shifts(tree2, Y2, l1ou_pBIC_model, "l1ou+pBIC")
+p3 <- plot_model_shifts(tree2, Y2, l1ou_BIC_model, "l1ou+BIC")
+p4 <- plot_model_shifts(tree2, Y2, phyloEM_model, "PhyloEM")
+p5 <- plot_PCMFit_model(tree2, Y2, bestFit, "PCMFit")
+
+#--- Display all together ---#
+grid.arrange(p1, p2, p3, p4, p5, NULL, ncol = 2)
+
+```
