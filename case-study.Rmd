@@ -10,7 +10,6 @@ knitr::opts_chunk$set(echo = TRUE)
 # Load dependencies and custom plotting utilities
 
 ```{r}
-setwd('code_submission')
 source('ShiVa.R')
 library(l1ou)
 source('method_helpers/l1ou_fixed.R')
