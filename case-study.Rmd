@@ -288,7 +288,7 @@ grid.arrange(p1, p2, p3, p4, p5, NULL, ncol = 2)
 # Sunfish data
 Load the data from phytools package. 
 
-```{r,message = FALSE}
+```{r}
 # Flower data is from phytools package
 data("sunfish.data")
 data("sunfish.tree")
@@ -350,6 +350,7 @@ fitMGPM_A_F_BC2_RR <- PCMFitMixed(
 bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
 
 ```
+
 Generate result comparison plots.
 ```{r}
 
