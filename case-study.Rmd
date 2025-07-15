@@ -1,0 +1,31 @@
+---
+title: "case-study"
+output: pdf
+date: "2025-07-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+source('ShiVa.R')
+library(l1ou)
+source('method_helpers/l1ou_fixed.R')
+library(PhylogeneticEM)
+library(PCMBase)
+library(PCMBaseCpp)
+library(PCMFit)
+library(data.table)
+library(phylolm)
+```
+
+# Flower data
+```{r}
+# Flower data is from phylolm package
+data("flowerSize")
+data("flowerTree")
+
+
+
+```
