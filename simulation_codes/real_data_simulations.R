@@ -7,6 +7,7 @@ library(PCMBase)
 library(PCMBaseCpp)
 library(PCMFit)
 library(data.table)
+library(stringr)
 
 generatePCMModelsFunction <- function() {
 # make results reproducible
@@ -25,35 +26,31 @@ file_path = ""
 alpha = 1
 sigma2_0 = 2
 m = 2   # Number of simulations per process
-t = 25  # Number of independent processes per parameter setting
-
-data('lizard.tree')
-tree1 = lizard.tree
-#tree1 = rcoal(5)
-tree1$edge.length = tree1$edge.length/max(node.depth.edgelength(tree1))
-X = generate_design_matrix(tree1,type='simpX')
+t = 50  # Number of independent processes per parameter setting
+tree1= readRDS(paste0(file_path,"/real_data_tree.rds")  # The tree of real data
 
 args = commandArgs(T)
 k = as.numeric(args[1])
-runfile = read.csv('runfile.csv')
+model_list = c("ShiVa_model.rds",
+                "l1ou_pBIC_model.rds",
+                "l1ou_pBIC_alpha_model.rds",
+                "l1ou_BIC_model.rds",
+                "l1ou_BIC_alpha_model.rds",
+                "phyloEM_model.rds",
+                "phyloEM_alpha_model.rds",
+                "PCMFit_model.rds",
+                "PCMFit_alpha_model.rds")
 
 
-params = as.character(runfile[ceiling(k/t),])
-true_shifts_mean = as.numeric(strsplit(params[2],',')[[1]])
-size_mean = as.numeric(strsplit(params[3],',')[[1]])
-true_shifts_var = as.numeric(strsplit(params[4],',')[[1]])
-size_var = as.numeric(strsplit(params[5],',')[[1]])
-
+model_file = model_list[ceiling(k/t)]
+model_name = str_sub(model_file, 1, -5) 
+sim_model = readRDS(paste0("file_path/",model_file)) # Load the model on which simulations will be based on
+X = generate_design_matrix(tree1,type='simpX')
+Sigma = sim_model$Sigma
+beta = sim_model$beta
+alpha = sim_model$alpha
 V = OU.vcv(tree1,alpha)
-tb = node.depth.edgelength(tree1)[tree1$edge[,1]]
-q = exp(-2*alpha*max(node.depth.edgelength(tree1)))/(2*alpha)*(1-exp(2*alpha*tb))
 
-gamma = rep(0,ncol(X))
-gamma[true_shifts_var]  = size_var
-Sigma = V*sigma2_0 +  X%*%diag(gamma)%*%t(X)*V+ X%*%diag(gamma*q)%*%t(X)
-
-beta = rep(0,ncol(X))
-beta[true_shifts_mean] = size_mean
 test_data =get_test_data(tree1,Sigma,1000,alpha,beta)
 
 r_phyloEM = data.frame(matrix(nrow=0,ncol=ncol(X)))
@@ -73,7 +70,15 @@ names(computing_time_table) = c('ShiVa','l1ou+pBIC','l1ou+BIC','phyloEM','PCMFit
 i = 0
 
 while(i<m){
-
+  if((i-1<0.1*m) & i>=0.1*m){print('finish: 10%')}
+  if((i-1<0.2*m) & i>=0.2*m){print('finish: 20%')}      
+  if((i-1<0.3*m) & i>=0.3*m){print('finish: 30%')}
+  if((i-1<0.4*m) & i>=0.4*m){print('finish: 40%')}
+  if((i-1<0.5*m) & i>=0.5*m){print('finish: 50%')}
+  if((i-1<0.6*m) & i>=0.6*m){print('finish: 60%')}
+  if((i-1<0.7*m) & i>=0.7*m){print('finish: 70%')}
+  if((i-1<0.8*m) & i>=0.8*m){print('finish: 80%')}
+  if((i-1<0.9*m) & i>=0.9*m){print('finish: 90%')}
 
   tryCatch({
   eps = mvrnorm(n = 1, mu = rep(0,nrow(X)), Sigma = Sigma)
@@ -87,7 +92,8 @@ while(i<m){
   source('ShiVa_me.R')
   t = Sys.time()
   alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
-  result1 = get_mean_var_shifts_model_selection(Y,tree1,alpha_hat,NULL,exp(1:10-6),top_k = 3, measurement_error = FALSE)
+  result1 = result = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
+                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.1se",max.num.shifts = 16)
   ctime_row = c(Sys.time()-t)
   r_ShiVa$shifts_mean[nrow(r_ShiVa$shifts_mean)+1,] = as.numeric(result1$best_model$beta!=0)
   r_ShiVa$shifts_var[nrow(r_ShiVa$shifts_var)+1,] = as.numeric(result1$best_model$gamma!=0)  
@@ -99,7 +105,7 @@ while(i<m){
 ###############l1ou#############
 
   t = Sys.time()
-  l1ou_model1 = estimate_shift_configuration(tree2,Y2,max.nShifts=20,criterion="pBIC")
+  l1ou_model1 = estimate_shift_configuration(tree2,Y2)
   
   ctime_row = c(ctime_row,Sys.time()-t)
   r_l1ou$pBIC[nrow(r_l1ou$pBIC)+1,] = as.numeric(1:ncol(X) %in% l1ou_model1$shift.configuration)
@@ -107,7 +113,7 @@ while(i<m){
   loglik_row = c(loglik_row, get_prediction_likelihood(lmod1$fitted.values,V*lmod1$sigma2,alpha,test_data))
   
   t = Sys.time()
-  l1ou_model2 = estimate_shift_configuration(tree2,Y2,max.nShifts=20,criterion="BIC")
+  l1ou_model2 = estimate_shift_configuration(tree2,Y2,criterion="BIC")
 
   ctime_row = c(ctime_row,Sys.time()-t)
   r_l1ou$BIC[nrow(r_l1ou$BIC)+1,] = as.numeric(1:ncol(X) %in% l1ou_model2$shift.configuration)
@@ -116,7 +122,7 @@ while(i<m){
  
  ##########phyloEM###########
   t = Sys.time()
-  emmodel = PhyloEM(tree1,as.vector(Y),process='OU',K_max = 20)
+  emmodel = PhyloEM(force.ultrametric(tree2),as.vector(Y2),process='OU',K_max = 20)
   sv_em = params_process(emmodel)$shift$edges
   
   ctime_row = c(ctime_row,Sys.time()-t)
@@ -128,17 +134,16 @@ while(i<m){
 
   t = Sys.time()
   fitMGPM_A_F_BC2_RR <- PCMFitMixed(
-      X = t(Y), tree = tree1, metaIFun = PCMInfoCpp,
+      X = t(Y2), tree = tree2, metaIFun = PCMInfoCpp,
       generatePCMModelsFun = generatePCMModelsFunction, 
       maxNumRoundRobins = 2, maxNumPartitionsInRoundRobins = 10,minCladeSizes = 2L,
       tableFitsPrev = NULL,
      # prefixFiles = prefixFiles,
       doParallel = FALSE)
- 
   bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
   ctime_row = c(ctime_row,Sys.time()-t)
-  r_PCMFit[nrow(r_PCMFit)+1,] = as.numeric(tree1$edge[,2] %in% as.numeric(bestFit$inferredRegimeNodes))
-  loglik_row = c(loglik_row, get_prediction_likelihood(PCMBase::PCMMean(tree1,bestFit$inferredModel),PCMBase::PCMVar(tree1,bestFit$inferredModel),alpha,test_data))
+  r_PCMFit[nrow(r_PCMFit)+1,] = as.numeric(tree2$edge[,2] %in% as.numeric(bestFit$inferredRegimeNodes))
+  loglik_row = c(loglik_row, get_prediction_likelihood(PCMBase::PCMMean(tree2,bestFit$inferredModel),PCMBase::PCMVar(tree2,bestFit$inferredModel),alpha,test_data))
 
   loglik_row = c(loglik_row, get_prediction_likelihood(X%*%beta,Sigma,alpha,test_data))
 
@@ -150,7 +155,7 @@ while(i<m){
   if(i == 1){ctime = proc.time()[1]*100}
 
   result = list('ShiVa' = r_ShiVa, 'l1ou' = r_l1ou,'phyloEM' = r_phyloEM, 'PCMFit'=r_PCMFit,'loglik'=loglik_table,'compute_time'=computing_time_table)
-  saveRDS(result,paste(file_path,'/results/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',ctime,'.rds',sep=""))
+  saveRDS(result,paste(file_path,'/results/results_',model_name,'_',ctime,'.rds',sep=""))
 
 
   }, error = function(e){cat("ERROR :",conditionMessage(e), "\n")})
@@ -158,4 +163,4 @@ while(i<m){
 
 
 result = list('ShiVa' = r_ShiVa, 'l1ou' = r_l1ou,'phyloEM' = r_phyloEM, 'PCMFit'=r_PCMFit, 'loglik'=loglik_table,'compute_time'=computing_time_table)
-saveRDS(result,paste(file_path,'/results/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',ctime,'.rds',sep=""))
+  saveRDS(result,paste(file_path,'/results/results_',model_name,'_',ctime,'.rds',sep=""))

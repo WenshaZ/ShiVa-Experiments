@@ -24,8 +24,8 @@ source('DefineParameterLimits.R', local=FALSE)
 file_path = ""  
 alpha = 1
 sigma2_0 = 2
-m = 2   # Number of simulations per process
-t = 25  # Number of independent processes per parameter setting
+m = 5  # Number of simulations per process
+t = 10  # Number of independent processes per parameter setting
 
 data('lizard.tree')
 tree1 = lizard.tree
@@ -33,16 +33,19 @@ tree1 = lizard.tree
 tree1$edge.length = tree1$edge.length/max(node.depth.edgelength(tree1))
 X = generate_design_matrix(tree1,type='simpX')
 
+
 args = commandArgs(T)
 k = as.numeric(args[1])
-runfile = read.csv('runfile.csv')
+runfile = read.csv(paste0(file_path,'/runfile_misestimation.csv'))
 
-
-params = as.character(runfile[ceiling(k/t),])
+params = as.character(runfile[ceiling(k/10),])
 true_shifts_mean = as.numeric(strsplit(params[2],',')[[1]])
 size_mean = as.numeric(strsplit(params[3],',')[[1]])
 true_shifts_var = as.numeric(strsplit(params[4],',')[[1]])
 size_var = as.numeric(strsplit(params[5],',')[[1]])
+#me_sd = as.numeric(strsplit(params[6],',')[[1]])
+alpha_hat = exp(as.numeric(strsplit(params[6],',')[[1]]))
+
 
 V = OU.vcv(tree1,alpha)
 tb = node.depth.edgelength(tree1)[tree1$edge[,1]]
@@ -65,28 +68,37 @@ r_ShiVa = list("shifts_mean"=data.frame(matrix(nrow=0,ncol=ncol(X))),
 
 loglik_table = data.frame(matrix(nrow=0,ncol=6))
 names(loglik_table) = c('ShiVa','l1ou+pBIC','l1ou+BIC','phyloEM','PCMFit','true')
+#loglik_table = data.frame(matrix(nrow=0,ncol=5))
+#names(loglik_table) = c('ShiVa','l1ou+pBIC','l1ou+BIC','phyloEM','PCMFit'true')
 
 computing_time_table = data.frame(matrix(nrow=0,ncol=5))
 names(computing_time_table) = c('ShiVa','l1ou+pBIC','l1ou+BIC','phyloEM','PCMFit')
+#corrected_loglik_table = data.frame(matrix(nrow=0,ncol=7))
+#names(corrected_loglik_table) = c('ShiVa_original','ShiVa_log','ShiVa_log_ME','l1ou+pBIC','l1ou+BIC','phyloEM','true')
+#sigma2_table = data.frame(matrix(nrow=0,ncol=7))
+#names(sigma2_table) = c('ShiVa_original','ShiVa_log','ShiVa_log_ME','l1ou+pBIC','l1ou+BIC','phyloEM','sigma2_error')
 
-
+m = 5
 i = 0
 
 while(i<m){
-
+  if((i-1<0.1*m) & i>=0.1*m){print('finish: 10%')}
+  if((i-1<0.2*m) & i>=0.2*m){print('finish: 20%')}      
+  if((i-1<0.3*m) & i>=0.3*m){print('finish: 30%')}
+  if((i-1<0.4*m) & i>=0.4*m){print('finish: 40%')}
+  if((i-1<0.5*m) & i>=0.5*m){print('finish: 50%')}
+  if((i-1<0.6*m) & i>=0.6*m){print('finish: 60%')}
+  if((i-1<0.7*m) & i>=0.7*m){print('finish: 70%')}
+  if((i-1<0.8*m) & i>=0.8*m){print('finish: 80%')}
+  if((i-1<0.9*m) & i>=0.9*m){print('finish: 90%')}
 
   tryCatch({
   eps = mvrnorm(n = 1, mu = rep(0,nrow(X)), Sigma = Sigma)
   Y = X%*%beta+eps
-
-  adj_data = adjust_data(tree1,Y)
-  tree2 = adj_data$tree
-  Y2 = adj_data$Y
-
+  
   #### ShiVa #####
   source('ShiVa_me.R')
   t = Sys.time()
-  alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
   result1 = get_mean_var_shifts_model_selection(Y,tree1,alpha_hat,NULL,exp(1:10-6),top_k = 3, measurement_error = FALSE)
   ctime_row = c(Sys.time()-t)
   r_ShiVa$shifts_mean[nrow(r_ShiVa$shifts_mean)+1,] = as.numeric(result1$best_model$beta!=0)
@@ -94,35 +106,47 @@ while(i<m){
 
   sv_mean = (1:ncol(X))[result1$best_model$beta!=0]
   sv_var = (1:ncol(X))[result1$best_model$gamma!=0]
-  loglik_row = c(get_prediction_likelihood(result1$best_model$fitted.values,result1$best_model$Sigma,alpha,test_data))
+
+  OModel = fit_OU_mean_var(tree1,Y,alpha,sv_mean,sv_var)
+  loglik_row = c(get_prediction_likelihood(OModel$fitted.values,OModel$Sigma,alpha,test_data))
   
 ###############l1ou#############
 
+  adj_data = adjust_data(tree1,Y)
+  tree2 = adj_data$tree
+  Y2 = adj_data$Y
+
+  l1ou_model = estimate_shift_configuration(tree2,Y2,max.nShifts=20)
+  opt = l1ou_model$l1ou.options
+  opt$use.saved.scores = FALSE
+
   t = Sys.time()
-  l1ou_model1 = estimate_shift_configuration(tree2,Y2,max.nShifts=20,criterion="pBIC")
+  opt$criterion = 'pBIC'
+  l1ou_model1 = estimate_shift_configuration_known_alpha(tree2,Y2,alpha=alpha_hat,opt = opt)
   
   ctime_row = c(ctime_row,Sys.time()-t)
   r_l1ou$pBIC[nrow(r_l1ou$pBIC)+1,] = as.numeric(1:ncol(X) %in% l1ou_model1$shift.configuration)
-  lmod1 = if(length(l1ou_model1$shift.configuration)>0) phylolm(Y2~X[,l1ou_model1$shift.configuration],phy=tree2,model='OUfixedRoot') else phylolm(Y2~1,phy=tree2,model='OUfixedRoot')
-  loglik_row = c(loglik_row, get_prediction_likelihood(lmod1$fitted.values,V*lmod1$sigma2,alpha,test_data))
+  OModel2 = fit_OU_mean_var(tree2,Y2,alpha,l1ou_model1$shift.configuration,c())
+  loglik_row = c(loglik_row, get_prediction_likelihood(OModel2$fitted.values,OModel2$Sigma,alpha,test_data))
   
   t = Sys.time()
-  l1ou_model2 = estimate_shift_configuration(tree2,Y2,max.nShifts=20,criterion="BIC")
+  opt$criterion = 'BIC'
+  l1ou_model2 = estimate_shift_configuration_known_alpha(tree2,Y2,alpha=alpha_hat,opt = opt)
 
   ctime_row = c(ctime_row,Sys.time()-t)
   r_l1ou$BIC[nrow(r_l1ou$BIC)+1,] = as.numeric(1:ncol(X) %in% l1ou_model2$shift.configuration)
-  lmod2 = if(length(l1ou_model2$shift.configuration)>0) phylolm(Y2~X[,l1ou_model2$shift.configuration],phy=tree2,model='OUfixedRoot') else phylolm(Y2~1,phy=tree2,model='OUfixedRoot')
-  loglik_row = c(loglik_row, get_prediction_likelihood(lmod2$fitted.values,V*lmod2$sigma2,alpha,test_data))
+  OModel3 = fit_OU_mean_var(tree2,Y2,alpha,l1ou_model2$shift.configuration,c())
+  loglik_row = c(loglik_row, get_prediction_likelihood(OModel3$fitted.values,OModel3$Sigma,alpha,test_data))
  
  ##########phyloEM###########
   t = Sys.time()
-  emmodel = PhyloEM(tree1,as.vector(Y),process='OU',K_max = 20)
+  emmodel = PhyloEM(tree1,as.vector(Y),process='OU',K_max = 20,alpha = alpha_hat)
   sv_em = params_process(emmodel)$shift$edges
   
   ctime_row = c(ctime_row,Sys.time()-t)
   r_phyloEM[nrow(r_phyloEM)+1,] = as.numeric(1:ncol(X) %in% sv_em)
-  lmod3 = if(length(sv_em)>0) phylolm(Y2~X[,sv_em],phy=tree2,model='OUfixedRoot') else phylolm(Y2~1,phy=tree2,model='OUfixedRoot')
-  loglik_row = c(loglik_row, get_prediction_likelihood(lmod3$fitted.values,V*lmod3$sigma2,alpha,test_data))
+  OModel4 = fit_OU_mean_var(tree1,Y,alpha,sv_em,c())
+  loglik_row = c(loglik_row, get_prediction_likelihood(OModel4$fitted.values,OModel4$Sigma,alpha,test_data))
 
   ############PCMFit###########
 
@@ -134,7 +158,6 @@ while(i<m){
       tableFitsPrev = NULL,
      # prefixFiles = prefixFiles,
       doParallel = FALSE)
- 
   bestFit <- RetrieveBestFitScore(fitMGPM_A_F_BC2_RR)
   ctime_row = c(ctime_row,Sys.time()-t)
   r_PCMFit[nrow(r_PCMFit)+1,] = as.numeric(tree1$edge[,2] %in% as.numeric(bestFit$inferredRegimeNodes))
@@ -150,7 +173,7 @@ while(i<m){
   if(i == 1){ctime = proc.time()[1]*100}
 
   result = list('ShiVa' = r_ShiVa, 'l1ou' = r_l1ou,'phyloEM' = r_phyloEM, 'PCMFit'=r_PCMFit,'loglik'=loglik_table,'compute_time'=computing_time_table)
-  saveRDS(result,paste(file_path,'/results/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',ctime,'.rds',sep=""))
+  saveRDS(result,paste(file_path,'/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',round(log(alpha_hat)),'_',ctime,'.rds',sep=""))
 
 
   }, error = function(e){cat("ERROR :",conditionMessage(e), "\n")})
@@ -158,4 +181,4 @@ while(i<m){
 
 
 result = list('ShiVa' = r_ShiVa, 'l1ou' = r_l1ou,'phyloEM' = r_phyloEM, 'PCMFit'=r_PCMFit, 'loglik'=loglik_table,'compute_time'=computing_time_table)
-saveRDS(result,paste(file_path,'/results/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',ctime,'.rds',sep=""))
+  saveRDS(result,paste(file_path,'/experiment_',paste(true_shifts_mean,collapse = '-'),'_',paste(size_mean,collapse = '-'),'_',paste(true_shifts_var,collapse = '-'),'_',paste(size_var,collapse = '-'),'_',round(log(alpha_hat)),'_',ctime,'.rds',sep=""))
