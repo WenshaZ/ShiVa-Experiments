@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # Load dependencies and custom plotting utilities
 
 ```{r}
-source('ShiVa.R')
+library(ShiVa)
 library(l1ou)
 source('method_helpers/l1ou_fixed.R')
 library(PhylogeneticEM)
@@ -226,11 +226,13 @@ We then apply ShiVa, l1ou+pBIC, l1ou+BIC, phyloEM and PCMFit on the flower data.
 ```{r,message=FALSE}
 ############ ShiVa ###############
 set.seed(32)
-alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
-ShiVa_model = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
-                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.min",max.num.shifts = 16)$best_model
-print(paste0("ShiVa: shifts in opimal value - ",paste(ShiVa_model$shifts_mean,collapse=",")))
-print(paste0("ShiVa: shifts in variance - ",paste(ShiVa_model$shifts_var,collapse=",")))
+ShiVa_model = ShiVa(Y2, tree2, alpha = NULL, refit_alpha = FALSE,
+                    lambda1_list = NULL, lambda2_list = exp(1:10*0.4-6),
+                    nfolds = 8, top_k = 6, max.steps = 300,
+                    lambda.type = "lambda.min", max.num.shifts = 16,
+                    measurement_error = FALSE, verbose = FALSE)$best_model
+print(paste0("ShiVa: shifts in opimal value - ",paste(which(ShiVa_model$beta!=0),collapse=",")))
+print(paste0("ShiVa: shifts in variance - ",paste(which(ShiVa_model$gamma!=0),collapse=",")))
 ```
 
 ```{r}
@@ -311,11 +313,13 @@ We then apply ShiVa, l1ou+pBIC, l1ou+BIC, phyloEM and PCMFit on the sunfish data
 ```{r,message=FALSE}
 ############ ShiVa ###############
 set.seed(32)
-alpha_hat = phylolm(Y2~1, phy= tree2,model="OUfixedRoot")$optpar
-ShiVa_model = get_mean_var_shifts_model_selection(Y2,tree2,alpha_hat,NULL,
-                                                       exp(1:10*0.4-6),top_k = 6,max.steps=300, t = 0.01,lambda.type="lambda.min",max.num.shifts = 16)$best_model
-print(paste0("ShiVa: shifts in opimal value - ",paste(ShiVa_model$shifts_mean,collapse=",")))
-print(paste0("ShiVa: shifts in variance - ",paste(ShiVa_model$shifts_var,collapse=",")))
+ShiVa_model = ShiVa(Y2, tree2, alpha = NULL, refit_alpha = FALSE,
+                    lambda1_list = NULL, lambda2_list = exp(1:10*0.4-6),
+                    nfolds = 8, top_k = 6, max.steps = 300,
+                    lambda.type = "lambda.min", max.num.shifts = 16,
+                    measurement_error = FALSE, verbose = FALSE)$best_model
+print(paste0("ShiVa: shifts in opimal value - ",paste(which(ShiVa_model$beta!=0),collapse=",")))
+print(paste0("ShiVa: shifts in variance - ",paste(which(ShiVa_model$gamma!=0),collapse=",")))
 ```
 
 ```{r}
